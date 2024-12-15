@@ -31,6 +31,10 @@ const app = new Elysia()
     const assessments = db.query("SELECT * FROM assessments").all();
     return assessments;
   })
+  .get("/assessments/get/:id", ({ params }) => {
+    const assessment = db.prepare("SELECT * FROM assessments WHERE id = ?").get(params.id);
+    return assessment;
+  })
   .post("/assessments/distribute", ({ body }) => {
     const { title, description, time_limit, shuffle_questions, section, questions } = body;
     const existing = onGoingAssessment.find(assessment => assessment.title === title && assessment.description === description);
