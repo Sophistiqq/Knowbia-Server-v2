@@ -12,15 +12,18 @@ try {
   console.error(e);
 }
 
-let onGoingAssessment: any[] = [];
+let onGoingAssessments: any[] = [];
+let restrictedStudents: any[] = [];
 
 const app = new Elysia()
   .use(cors())
   .post("/assessments/save", ({ body }) => {
     const { title, description, time_limit, shuffle_questions, section, questions } = body;
+    console.table(body)
     const existing = db.prepare("SELECT * FROM assessments WHERE title = ? AND description = ?").get(title, description); // Prepare the SQL statement
     if (existing) {
-      return { status: "error", message: "Assessment already exists!" };
+      db.run("UPDATE assessments SET time_limit = ?, shuffle_questions = ?, section = ?, questions = ? WHERE title = ? AND description = ?", [time_limit, shuffle_questions, section, JSON.stringify(questions), title, description]);
+      return { status: "success", message: "Assessment updated!" };
     }
     db.run("INSERT INTO assessments (title, description, time_limit, shuffle_questions, section, questions) VALUES (?, ?,?, ?, ?, ?)", [title, description, time_limit, shuffle_questions, section, JSON.stringify(questions)]);
     return { status: "success", message: "Assessment saved!" };
@@ -37,21 +40,34 @@ const app = new Elysia()
   })
   .post("/assessments/distribute", ({ body }) => {
     const { title, description, time_limit, shuffle_questions, section, questions } = body;
-    const existing = onGoingAssessment.find(assessment => assessment.title === title && assessment.description === description);
+    console.log(shuffle_questions)
+    const existing = onGoingAssessments.find(assessment => assessment.title === title && assessment.description === description);
     if (existing) {
       return { status: "error", message: "Assessment is already ongoing!" };
     }
-    onGoingAssessment.push(body);
+    onGoingAssessments.push(body);
     db.run("INSERT INTO distributed_assessments (title, description, time_limit, shuffle_questions, section, questions) VALUES (?, ?,?, ?, ?, ?)", [title, description, time_limit, shuffle_questions, section, JSON.stringify(questions)]);
     return { status: "success", message: "Assessment distributed!" };
   }, {
     body: AssessmentType
   })
   .get("/assessments/ongoing", () => {
-    return onGoingAssessment;
+    return onGoingAssessments;
   })
-  .post("/reset", () => {
-    db.run("DELETE FROM assessments");
+  .post("/control/stop-assessment", ({ body }) => {
+    const { title, description } = body;
+    const index = onGoingAssessments.findIndex(assessment => assessment.title === title && assessment.description === description);
+    if (index === -1) {
+      return { status: "error", message: "Assessment not found!" };
+    }
+    onGoingAssessments.splice(index, 1);
+    return { status: "success", message: "Assessment stopped!" };
+  }, {
+    body: AssessmentType
+  })
+  .get("/page/manage-assessments", () => {
+    // This is where the necessarry data for the manage assessments page will be fetched, such as the list of ongoing assessment, restricted students
+    return { onGoingAssessments: onGoingAssessments, restrictedStudents, status: "success", message: "Data fetched!" };
   })
 
   .listen(3000);
