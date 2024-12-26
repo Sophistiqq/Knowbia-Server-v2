@@ -34,3 +34,22 @@ export const AssessmentType = t.Object({
   questions: t.Array(QuestionType)
 });
 
+
+//body: t.Object({
+//  student_id: t.Number(),
+//  first_name: t.String(),
+//  last_name: t.String(),
+//  email: t.String(),
+//  password: t.String(),
+//  section: t.String()
+//})
+//
+
+export const StudentType = t.Object({
+  student_number: t.String(),
+  first_name: t.String(),
+  last_name: t.String(),
+  email: t.String(),
+  password: t.String(),
+  section: t.String()
+});

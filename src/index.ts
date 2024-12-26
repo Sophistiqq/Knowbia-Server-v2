@@ -1,25 +1,45 @@
-import { Elysia } from "elysia";
-import { AssessmentType } from "./types";
+import { Elysia, t } from "elysia";
+import { AssessmentType, StudentType } from "./types";
 import { Database } from "bun:sqlite"
 import { cors } from "@elysiajs/cors";
-
+import { swagger } from '@elysiajs/swagger'
+import { jwt } from '@elysiajs/jwt'
 
 const db = new Database("db.sqlite")
 try {
   db.run("CREATE TABLE IF NOT EXISTS assessments (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT, time_limit INTEGER, questions TEXT, shuffle_questions BOOLEAN, section TEXT)");
   db.run("CREATE TABLE IF NOT EXISTS distributed_assessments (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT, time_limit INTEGER, questions TEXT, shuffle_questions BOOLEAN, section TEXT)");
+  db.run("CREATE TABLE IF NOT EXISTS students (student_number TEXT PRIMARY KEY, first_name TEXT, last_name TEXT, email TEXT, password TEXT, section TEXT)");
 } catch (e) {
   console.error(e);
 }
 
 let onGoingAssessments: any[] = [];
-let restrictedStudents: any[] = [];
+let restrictedStudents: any[] = [
+  { id: 1, name: "John Doe", reason: "Cheating" },
+  { id: 2, name: "Jane Smith", reason: "Disruptive behavior" }
+];
 
 const app = new Elysia()
+  .use(
+    swagger({
+      documentation: {
+        info: {
+          title: 'Knowbia Server Documentation',
+          version: '2.0.0'
+        }
+      }
+    })
+  )
+  .use(
+    jwt({
+      name: "jwt",
+      secret: "Knowbia"
+    })
+  )
   .use(cors())
   .post("/assessments/save", ({ body }) => {
     const { title, description, time_limit, shuffle_questions, section, questions } = body;
-    console.table(body)
     const existing = db.prepare("SELECT * FROM assessments WHERE title = ? AND description = ?").get(title, description); // Prepare the SQL statement
     if (existing) {
       db.run("UPDATE assessments SET time_limit = ?, shuffle_questions = ?, section = ?, questions = ? WHERE title = ? AND description = ?", [time_limit, shuffle_questions, section, JSON.stringify(questions), title, description]);
@@ -40,7 +60,6 @@ const app = new Elysia()
   })
   .post("/assessments/distribute", ({ body }) => {
     const { title, description, time_limit, shuffle_questions, section, questions } = body;
-    console.log(shuffle_questions)
     const existing = onGoingAssessments.find(assessment => assessment.title === title && assessment.description === description);
     if (existing) {
       return { status: "error", message: "Assessment is already ongoing!" };
@@ -65,11 +84,44 @@ const app = new Elysia()
   }, {
     body: AssessmentType
   })
+  .post("/control/unrestrict/:id", ({ params }) => {
+    const index = restrictedStudents.findIndex(student => student.id === params.id);
+    if (index === -1) {
+      return { status: "error", message: "Student not found!" };
+    }
+    restrictedStudents.splice(index, 1);
+    return { status: "success", message: "Successfully unrestricted" };
+  }, {
+    params: t.Object({ id: t.Number() })
+  })
   .get("/page/manage-assessments", () => {
     // This is where the necessarry data for the manage assessments page will be fetched, such as the list of ongoing assessment, restricted students
-    return { onGoingAssessments: onGoingAssessments, restrictedStudents, status: "success", message: "Data fetched!" };
+    return { onGoingAssessments, restrictedStudents, status: "success", message: "Data fetched!" };
+  })
+  .get('/assessments/delete/:id', ({ params }) => {
+    const { id } = params;
+    const existing = db.prepare("SELECT * FROM assessments WHERE id = ?").get(id);
+    if (!existing) {
+      return { status: "error", message: "Assessment not found!" };
+    }
+    db.run("DELETE FROM assessments WHERE id = ?", [id]);
+    return { status: "success", message: "Assessment deleted!" };
+  }, {
+    params: t.Object({ id: t.Number() })
   })
 
+  .post("/students/register", ({ body }) => {
+    const { student_number, first_name, last_name, email, password, section } = body;
+    const hashedPassword = Bun.hash(password);
+    const existing = db.prepare("SELECT * FROM students WHERE student_number = ?").get(student_number);
+    if (existing) {
+      return { status: "error", message: "Student already exists!" };
+    }
+    db.run("INSERT INTO students (student_number, first_name, last_name, email, password, section) VALUES (?, ?, ?, ?, ?, ?)", [student_number, first_name, last_name, email, hashedPassword, section]);
+    return { status: "success", message: "Student registered!" };
+  }, {
+    body: StudentType
+  })
   .listen(3000);
 
 
