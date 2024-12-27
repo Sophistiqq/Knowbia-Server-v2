@@ -11,7 +11,7 @@ try {
   db.run("CREATE TABLE IF NOT EXISTS assessments (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT, time_limit INTEGER, questions TEXT, shuffle_questions BOOLEAN, section TEXT)");
   db.run("CREATE TABLE IF NOT EXISTS distributed_assessments (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT, time_limit INTEGER, questions TEXT, shuffle_questions BOOLEAN, section TEXT)");
   db.run("CREATE TABLE IF NOT EXISTS students (student_number TEXT PRIMARY KEY, first_name TEXT, last_name TEXT, email TEXT, password TEXT, section TEXT)");
-  db.run("CREATE TABLE IF NOT EXISTS assessment_results (id INTEGER PRIMARY KEY AUTOINCREMENT, student_number TEXT, assessment TEXT, answers TEXT, time_taken INTEGER, total_points INTEGER, mistakes TEXT)");
+  db.run("CREATE TABLE IF NOT EXISTS assessment_results (id INTEGER PRIMARY KEY AUTOINCREMENT, student_number TEXT, assessment TEXT, answers TEXT, time_taken INTEGER, total_points INTEGER, mistakes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
 } catch (e) {
   console.error(e);
 }
@@ -39,7 +39,7 @@ const app = new Elysia()
   .use(cors())
   .post("/assessments/save", ({ body }) => {
     const { title, description, time_limit, shuffle_questions, section, questions } = body;
-    const existing = db.prepare("SELECT * FROM assessments WHERE title = ? AND description = ?").get(title, description); // Prepare the SQL statement
+    const existing: any = db.prepare("SELECT * FROM assessments WHERE title = ? AND description = ?").get(title, description); // Prepare the SQL statement
     if (existing) {
       db.run("UPDATE assessments SET time_limit = ?, shuffle_questions = ?, section = ?, questions = ? WHERE title = ? AND description = ?", [time_limit, shuffle_questions, section, JSON.stringify(questions), title, description]);
       return { status: "success", message: "Assessment updated!", id: existing.id };
@@ -59,7 +59,7 @@ const app = new Elysia()
   })
   .post("/assessments/distribute", ({ body }) => {
     const { title, description, time_limit, shuffle_questions, section, questions } = body;
-    const existing = onGoingAssessments.find(assessment => assessment.title === title && assessment.description === description);
+    const existing = onGoingAssessments.find(assessment => assessment.title === title && assessment.description === description && assessment.section === section);
     if (existing) {
       return { status: "error", message: "Assessment is already ongoing!" };
     }
@@ -84,14 +84,14 @@ const app = new Elysia()
     body: AssessmentType
   })
   .post("/control/unrestrict/:id", ({ params }) => {
-    const index = restrictedStudents.findIndex(student => student.id === params.id);
+    const index = restrictedStudents.findIndex(student => student.student_number === params.id);
     if (index === -1) {
       return { status: "error", message: "Student not found!" };
     }
     restrictedStudents.splice(index, 1);
     return { status: "success", message: "Successfully unrestricted" };
   }, {
-    params: t.Object({ id: t.Number() })
+    params: t.Object({ id: t.String() })
   })
   .get("/page/manage-assessments", () => {
     // This is where the necessarry data for the manage assessments page will be fetched, such as the list of ongoing assessment, restricted students
@@ -111,7 +111,7 @@ const app = new Elysia()
 
   .post("/students/register", async ({ body }) => {
     const { student_number, first_name, last_name, email, password, section } = body;
-    const hashedPassword = await hashSync(password, 10);
+    const hashedPassword = hashSync(password, 10);
     const existing = db.prepare("SELECT * FROM students WHERE student_number = ?").get(student_number);
     if (existing) {
       return { status: "error", message: "Student already exists!" };
@@ -123,7 +123,7 @@ const app = new Elysia()
   })
   .post("/students/login", async ({ body }) => {
     const { student_number, password } = body;
-    const student = db.prepare("SELECT * FROM students WHERE student_number = ?").get(student_number);
+    const student: any = db.prepare("SELECT * FROM students WHERE student_number = ?").get(student_number);
     if (!student) {
       return { status: "error", message: "Student not found!" };
     }
@@ -138,14 +138,16 @@ const app = new Elysia()
   })
   .post("/students/submit", ({ body }) => {
     console.log(body);
+    const { student_number, assessment, answers, time_taken, total_points, mistakes } = body;
+    db.run("INSERT INTO assessment_results (student_number, assessment, answers, time_taken, total_points, mistakes) VALUES (?, ?, ?, ?, ?, ?)", [student_number, JSON.stringify(assessment), JSON.stringify(answers), time_taken, total_points, JSON.stringify(mistakes)]);
     return { status: "success", message: "Answers submitted!" };
   }, {
     body: t.Object({
       student_number: t.String(),
       assessment: AssessmentType,
       answers: t.Array(t.Any()),
-      timeTaken: t.Number(),
-      totalPoints: t.Number(),
+      time_taken: t.Number(),
+      total_points: t.Number(),
       mistakes: t.Any()
     }),
     student: StudentType
@@ -165,10 +167,10 @@ const app = new Elysia()
     })
   })
   .post("/students/detected", ({ body }) => {
-    const { student_number, activity, assessment_id } = body;
+    const { student_number, activity, assessment_id, student_name } = body;
     console.table(body);
     if (activity === "minimized" || activity === "cheating") {
-      restrictedStudents.push({ assessment_id: assessment_id, student_number: student_number, reason: activity });
+      restrictedStudents.push({ assessment_id: assessment_id, student_number: student_number, reason: activity, student_name: student_name });
       return { status: "success", message: "Student restricted!" };
     }
     return { status: "success", message: "Activity logged!" };
@@ -176,8 +178,22 @@ const app = new Elysia()
     body: t.Object({
       assessment_id: t.Number(),
       student_number: t.String(),
-      activity: t.String()
+      activity: t.String(),
+      student_name: t.String()
     })
+  })
+  .get("/page/dashboard", () => {
+    const data = {
+      students: 0,
+      assessments: 0,
+      onGoingAssessments: onGoingAssessments.length,
+    };
+
+    const students = db.query("SELECT * FROM students").all();
+    const assessments = db.query("SELECT * FROM assessments").all();
+    data.students = students.length;
+    data.assessments = assessments.length;
+    return data;
   })
   .listen(3000);
 
