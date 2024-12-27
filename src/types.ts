@@ -12,7 +12,7 @@ export const QuestionType = t.Object({
     t.Literal('linear_scale')
   ]),
   options: t.Optional(t.Array(t.String())),
-  correctAnswers: t.Optional(t.Array(t.Any())),
+  correctAnswers: t.Optional(t.Any()),
   required: t.Boolean(),
   points: t.Number(),
   shuffleOptions: t.Boolean(),
@@ -26,6 +26,7 @@ export const QuestionType = t.Object({
 });
 
 export const AssessmentType = t.Object({
+  id: t.Optional(t.Number()),
   title: t.String(),
   description: t.String(),
   time_limit: t.Number(),
@@ -35,15 +36,6 @@ export const AssessmentType = t.Object({
 });
 
 
-//body: t.Object({
-//  student_id: t.Number(),
-//  first_name: t.String(),
-//  last_name: t.String(),
-//  email: t.String(),
-//  password: t.String(),
-//  section: t.String()
-//})
-//
 
 export const StudentType = t.Object({
   student_number: t.String(),

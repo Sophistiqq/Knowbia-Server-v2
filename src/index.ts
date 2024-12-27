@@ -4,21 +4,20 @@ import { Database } from "bun:sqlite"
 import { cors } from "@elysiajs/cors";
 import { swagger } from '@elysiajs/swagger'
 import { jwt } from '@elysiajs/jwt'
+import { hashSync, compareSync } from "bcryptjs";
 
 const db = new Database("db.sqlite")
 try {
   db.run("CREATE TABLE IF NOT EXISTS assessments (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT, time_limit INTEGER, questions TEXT, shuffle_questions BOOLEAN, section TEXT)");
   db.run("CREATE TABLE IF NOT EXISTS distributed_assessments (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT, time_limit INTEGER, questions TEXT, shuffle_questions BOOLEAN, section TEXT)");
   db.run("CREATE TABLE IF NOT EXISTS students (student_number TEXT PRIMARY KEY, first_name TEXT, last_name TEXT, email TEXT, password TEXT, section TEXT)");
+  db.run("CREATE TABLE IF NOT EXISTS assessment_results (id INTEGER PRIMARY KEY AUTOINCREMENT, student_number TEXT, assessment TEXT, answers TEXT, time_taken INTEGER, total_points INTEGER, mistakes TEXT)");
 } catch (e) {
   console.error(e);
 }
 
 let onGoingAssessments: any[] = [];
-let restrictedStudents: any[] = [
-  { id: 1, name: "John Doe", reason: "Cheating" },
-  { id: 2, name: "Jane Smith", reason: "Disruptive behavior" }
-];
+let restrictedStudents: any[] = [];
 
 const app = new Elysia()
   .use(
@@ -43,7 +42,7 @@ const app = new Elysia()
     const existing = db.prepare("SELECT * FROM assessments WHERE title = ? AND description = ?").get(title, description); // Prepare the SQL statement
     if (existing) {
       db.run("UPDATE assessments SET time_limit = ?, shuffle_questions = ?, section = ?, questions = ? WHERE title = ? AND description = ?", [time_limit, shuffle_questions, section, JSON.stringify(questions), title, description]);
-      return { status: "success", message: "Assessment updated!" };
+      return { status: "success", message: "Assessment updated!", id: existing.id };
     }
     db.run("INSERT INTO assessments (title, description, time_limit, shuffle_questions, section, questions) VALUES (?, ?,?, ?, ?, ?)", [title, description, time_limit, shuffle_questions, section, JSON.stringify(questions)]);
     return { status: "success", message: "Assessment saved!" };
@@ -110,9 +109,9 @@ const app = new Elysia()
     params: t.Object({ id: t.Number() })
   })
 
-  .post("/students/register", ({ body }) => {
+  .post("/students/register", async ({ body }) => {
     const { student_number, first_name, last_name, email, password, section } = body;
-    const hashedPassword = Bun.hash(password);
+    const hashedPassword = await hashSync(password, 10);
     const existing = db.prepare("SELECT * FROM students WHERE student_number = ?").get(student_number);
     if (existing) {
       return { status: "error", message: "Student already exists!" };
@@ -121,6 +120,64 @@ const app = new Elysia()
     return { status: "success", message: "Student registered!" };
   }, {
     body: StudentType
+  })
+  .post("/students/login", async ({ body }) => {
+    const { student_number, password } = body;
+    const student = db.prepare("SELECT * FROM students WHERE student_number = ?").get(student_number);
+    if (!student) {
+      return { status: "error", message: "Student not found!" };
+    }
+    const isPasswordCorrect = compareSync(password, student.password);
+    if (!isPasswordCorrect) {
+      return { status: "error", message: "Invalid password!" };
+    }
+    return { status: "success", message: "Student logged in!", student_data: student };
+  }, {
+    body: t.Object({ student_number: t.String(), password: t.String() }),
+    student: StudentType
+  })
+  .post("/students/submit", ({ body }) => {
+    console.log(body);
+    return { status: "success", message: "Answers submitted!" };
+  }, {
+    body: t.Object({
+      student_number: t.String(),
+      assessment: AssessmentType,
+      answers: t.Array(t.Any()),
+      timeTaken: t.Number(),
+      totalPoints: t.Number(),
+      mistakes: t.Any()
+    }),
+    student: StudentType
+  })
+  .post("/students/eligibility", ({ body }) => {
+    const { student_number, assessment_id } = body;
+    // if the student is restricted in the current assessment, return an error
+    const isRestricted = restrictedStudents.find(student => student.assessment_id === assessment_id && student.student_number === student_number);
+    if (isRestricted) {
+      return { status: "error", message: "You are restricted from taking this assessment!" };
+    }
+    return { status: "success", message: "Eligible to take the assessment!" };
+  }, {
+    body: t.Object({
+      student_number: t.String(),
+      assessment_id: t.Number()
+    })
+  })
+  .post("/students/detected", ({ body }) => {
+    const { student_number, activity, assessment_id } = body;
+    console.table(body);
+    if (activity === "minimized" || activity === "cheating") {
+      restrictedStudents.push({ assessment_id: assessment_id, student_number: student_number, reason: activity });
+      return { status: "success", message: "Student restricted!" };
+    }
+    return { status: "success", message: "Activity logged!" };
+  }, {
+    body: t.Object({
+      assessment_id: t.Number(),
+      student_number: t.String(),
+      activity: t.String()
+    })
   })
   .listen(3000);
 
