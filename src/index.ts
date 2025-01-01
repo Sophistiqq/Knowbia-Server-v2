@@ -182,6 +182,29 @@ const app = new Elysia()
       student_name: t.String()
     })
   })
+  .post("/students/delete", ({ body }) => {
+    const { student_number } = body;
+    const student = db.prepare("SELECT * FROM students WHERE student_number = ?").get(student_number);
+    if (!student) {
+      return { status: "error", message: "Student not found!" };
+    }
+    db.run("DELETE FROM students WHERE student_number = ?", [student_number]);
+    return { status: "success", message: "Student deleted!" };
+  }, {
+    body: StudentType
+  })
+  .post("/students/edit", ({ body }) => {
+    const { student_number, first_name, last_name, email, password, section } = body;
+    if (password !== "") {
+      const hashedPassword = hashSync(password, 10);
+      db.run("UPDATE students SET first_name = ?, last_name = ?, email = ?, password = ?, section = ? WHERE student_number = ?", [first_name, last_name, email, hashedPassword, section, student_number]);
+    } else {
+      db.run("UPDATE students SET first_name = ?, last_name = ?, email = ?, section = ? WHERE student_number = ?", [first_name, last_name, email, section, student_number]);
+    }
+    return { status: "success", message: "Student updated!" };
+  }, {
+    body: StudentType
+  })
   .get("/page/dashboard", () => {
     const data = {
       students: 0,
@@ -194,6 +217,10 @@ const app = new Elysia()
     data.students = students.length;
     data.assessments = assessments.length;
     return data;
+  })
+  .get("/page/manage-students", () => {
+    const students = db.query("SELECT * FROM students").all();
+    return students;
   })
   .listen(3000);
 
