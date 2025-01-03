@@ -44,8 +44,9 @@ const app = new Elysia()
       db.run("UPDATE assessments SET time_limit = ?, shuffle_questions = ?, section = ?, questions = ? WHERE title = ? AND description = ?", [time_limit, shuffle_questions, section, JSON.stringify(questions), title, description]);
       return { status: "success", message: "Assessment updated!", id: existing.id };
     }
+    const id: any = db.prepare("SELECT id FROM assessments ORDER BY id DESC LIMIT 1").get();
     db.run("INSERT INTO assessments (title, description, time_limit, shuffle_questions, section, questions) VALUES (?, ?,?, ?, ?, ?)", [title, description, time_limit, shuffle_questions, section, JSON.stringify(questions)]);
-    return { status: "success", message: "Assessment saved!" };
+    return { status: "success", message: "Assessment saved!", id };
   }, {
     body: AssessmentType
   })
@@ -58,12 +59,14 @@ const app = new Elysia()
     return assessment;
   })
   .post("/assessments/distribute", ({ body }) => {
-    const { title, description, time_limit, shuffle_questions, section, questions } = body;
+    const { title, description, time_limit, shuffle_questions, section, questions, id } = body;
+    console.log(body);
     const existing = onGoingAssessments.find(assessment => assessment.title === title && assessment.description === description && assessment.section === section);
     if (existing) {
       return { status: "error", message: "Assessment is already ongoing!" };
     }
     onGoingAssessments.push(body);
+    console.log(onGoingAssessments);
     db.run("INSERT INTO distributed_assessments (title, description, time_limit, shuffle_questions, section, questions) VALUES (?, ?,?, ?, ?, ?)", [title, description, time_limit, shuffle_questions, section, JSON.stringify(questions)]);
     return { status: "success", message: "Assessment distributed!" };
   }, {
@@ -206,21 +209,66 @@ const app = new Elysia()
     body: StudentType
   })
   .get("/page/dashboard", () => {
-    const data = {
-      students: 0,
-      assessments: 0,
-      onGoingAssessments: onGoingAssessments.length,
-    };
-
+    const savedAssessments = db.query("SELECT * FROM assessments").all();
     const students = db.query("SELECT * FROM students").all();
-    const assessments = db.query("SELECT * FROM assessments").all();
-    data.students = students.length;
-    data.assessments = assessments.length;
-    return data;
+    const ongoingAssessments = onGoingAssessments;
+    const completedAssessments = db.query("SELECT * FROM assessment_results").all();
+    const topPerformers = db.query("SELECT student_number, (SELECT first_name || ' ' || last_name FROM students WHERE students.student_number = assessment_results.student_number) as student_name, SUM(total_points) as total_points FROM assessment_results GROUP BY student_number ORDER BY total_points DESC LIMIT 5").all();
+    return {
+      savedAssessments: savedAssessments.length,
+      students: students.length,
+      ongoingAssessments: ongoingAssessments.length,
+      completedAssessments: completedAssessments.length,
+      topPerformers: topPerformers,
+      status: "success",
+      message: "Data fetched!"
+    };
   })
   .get("/page/manage-students", () => {
     const students = db.query("SELECT * FROM students").all();
     return students;
+  })
+
+  .get("/api/scores/average-over-time", () => {
+    const results = db.query("SELECT DATE(created_at) as date, AVG(total_points) as average_score FROM assessment_results GROUP BY DATE(created_at)").all();
+    const labels = results.map(result => result.date);
+    const values = results.map(result => result.average_score);
+    return { labels, values, status: "success", message: "Data fetched!" };
+  })
+  .get("/api/scores/distribution", () => {
+    const results = db.query("SELECT total_points FROM assessment_results").all();
+    const distribution = {
+      '0-10': 0,
+      '11-20': 0,
+      '21-30': 0,
+      '31-40': 0,
+      '41-50': 0,
+      '51-60': 0,
+      '61-70': 0,
+      '71-80': 0,
+      '81-90': 0,
+      '91-100': 0
+    };
+    results.forEach(result => {
+      const score = result.total_points;
+      if (score <= 10) distribution['0-10']++;
+      else if (score <= 20) distribution['11-20']++;
+      else if (score <= 30) distribution['21-30']++;
+      else if (score <= 40) distribution['31-40']++;
+      else if (score <= 50) distribution['41-50']++;
+      else if (score <= 60) distribution['51-60']++;
+      else if (score <= 70) distribution['61-70']++;
+      else if (score <= 80) distribution['71-80']++;
+      else if (score <= 90) distribution['81-90']++;
+      else distribution['91-100']++;
+    });
+    const labels = Object.keys(distribution);
+    const values = Object.values(distribution);
+    return { labels, values, status: "success", message: "Data fetched!" };
+  })
+  .get("/assessment/results", () => {
+    const results = db.query("SELECT * FROM assessment_results").all();
+    return results;
   })
   .listen(3000);
 
