@@ -11,7 +11,7 @@ try {
   db.run("CREATE TABLE IF NOT EXISTS assessments (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT, time_limit INTEGER, questions TEXT, shuffle_questions BOOLEAN, section TEXT)");
   db.run("CREATE TABLE IF NOT EXISTS distributed_assessments (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, description TEXT, time_limit INTEGER, questions TEXT, shuffle_questions BOOLEAN, section TEXT)");
   db.run("CREATE TABLE IF NOT EXISTS students (student_number TEXT PRIMARY KEY, first_name TEXT, last_name TEXT, email TEXT, password TEXT, section TEXT)");
-  db.run("CREATE TABLE IF NOT EXISTS assessment_results (id INTEGER PRIMARY KEY AUTOINCREMENT, student_number TEXT, assessment TEXT, answers TEXT, time_taken INTEGER, total_points INTEGER, mistakes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+  db.run("CREATE TABLE IF NOT EXISTS assessment_results (assessment_id INTEGER, student_number TEXT, assessment TEXT, answers TEXT, time_taken INTEGER, total_points INTEGER, mistakes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
 } catch (e) {
   console.error(e);
 }
@@ -42,11 +42,12 @@ const app = new Elysia()
     const existing: any = db.prepare("SELECT * FROM assessments WHERE title = ? AND description = ?").get(title, description); // Prepare the SQL statement
     if (existing) {
       db.run("UPDATE assessments SET time_limit = ?, shuffle_questions = ?, section = ?, questions = ? WHERE title = ? AND description = ?", [time_limit, shuffle_questions, section, JSON.stringify(questions), title, description]);
-      return { status: "success", message: "Assessment updated!", id: existing.id };
+      let id = existing.id;
+      return { status: "success", message: "Assessment updated!", id };
     }
     const id: any = db.prepare("SELECT id FROM assessments ORDER BY id DESC LIMIT 1").get();
     db.run("INSERT INTO assessments (title, description, time_limit, shuffle_questions, section, questions) VALUES (?, ?,?, ?, ?, ?)", [title, description, time_limit, shuffle_questions, section, JSON.stringify(questions)]);
-    return { status: "success", message: "Assessment saved!", id: id };
+    return { status: "success", message: "Assessment saved!", id };
   }, {
     body: AssessmentType
   })
@@ -141,11 +142,12 @@ const app = new Elysia()
   })
   .post("/students/submit", ({ body }) => {
     console.log(body);
-    const { student_number, assessment, answers, time_taken, total_points, mistakes } = body;
-    db.run("INSERT INTO assessment_results (student_number, assessment, answers, time_taken, total_points, mistakes) VALUES (?, ?, ?, ?, ?, ?)", [student_number, JSON.stringify(assessment), JSON.stringify(answers), time_taken, total_points, JSON.stringify(mistakes)]);
+    const { student_number, assessment, answers, time_taken, total_points, mistakes, assessment_id } = body;
+    db.run("INSERT INTO assessment_results (assessment_id, student_number, assessment, answers, time_taken, total_points, mistakes) VALUES (?, ?, ?, ?, ?, ?, ?)", [assessment_id, student_number, JSON.stringify(assessment), JSON.stringify(answers), time_taken, total_points, JSON.stringify(mistakes)]);
     return { status: "success", message: "Answers submitted!" };
   }, {
     body: t.Object({
+      assessment_id: t.Number(),
       student_number: t.String(),
       assessment: AssessmentType,
       answers: t.Array(t.Any()),
@@ -161,6 +163,11 @@ const app = new Elysia()
     const isRestricted = restrictedStudents.find(student => student.assessment_id === assessment_id && student.student_number === student_number);
     if (isRestricted) {
       return { status: "error", message: "You are restricted from taking this assessment!" };
+    }
+    // if the student already submitted the assessment, return an error
+    const hasSubmitted = db.prepare("SELECT * FROM assessment_results WHERE student_number = ? AND assessment_id = ?").get(student_number, assessment_id);
+    if (hasSubmitted) {
+      return { status: "error", message: "You have already submitted this assessment!" };
     }
     return { status: "success", message: "Eligible to take the assessment!" };
   }, {
