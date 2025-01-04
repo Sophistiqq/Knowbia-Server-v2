@@ -46,7 +46,7 @@ const app = new Elysia()
     }
     const id: any = db.prepare("SELECT id FROM assessments ORDER BY id DESC LIMIT 1").get();
     db.run("INSERT INTO assessments (title, description, time_limit, shuffle_questions, section, questions) VALUES (?, ?,?, ?, ?, ?)", [title, description, time_limit, shuffle_questions, section, JSON.stringify(questions)]);
-    return { status: "success", message: "Assessment saved!", id };
+    return { status: "success", message: "Assessment saved!", id: id };
   }, {
     body: AssessmentType
   })
@@ -60,8 +60,8 @@ const app = new Elysia()
   })
   .post("/assessments/distribute", ({ body }) => {
     const { title, description, time_limit, shuffle_questions, section, questions, id } = body;
-    console.log(body);
-    const existing = onGoingAssessments.find(assessment => assessment.title === title && assessment.description === description && assessment.section === section);
+    console.table(body);
+    const existing = onGoingAssessments.find(assessment => assessment.title === title && assessment.description === description && assessment.section === section && assessment.id === id);
     if (existing) {
       return { status: "error", message: "Assessment is already ongoing!" };
     }
