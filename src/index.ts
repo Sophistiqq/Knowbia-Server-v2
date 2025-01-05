@@ -273,13 +273,22 @@ const app = new Elysia()
     const values = Object.values(distribution);
     return { labels, values, status: "success", message: "Data fetched!" };
   })
-  .get("/assessment/results", () => {
+  .get("/page/assessment-results", () => {
     const results = db.query("SELECT * FROM assessment_results").all();
-    return results;
+    const assessments = db.query("SELECT * FROM assessments").all();
+    const students = db.query("SELECT * FROM students").all();
+    const questions_and_answers = db.query("SELECT assessment_results.assessment_id, assessment_results.answers, assessments.questions, students.student_number, students.first_name, students.last_name, students.email FROM assessment_results INNER JOIN assessments ON assessment_results.assessment_id = assessments.id INNER JOIN students ON assessment_results.student_number = students.student_number").all();
+
+    return {
+      results,
+      assessments,
+      students,
+      questions_and_answers,
+      status: "success",
+      message: "Data fetched!"
+    };
   })
-  .listen(3000);
 
-
+  .listen(3000)
 console.log("Server is running on port 3000");
-
 
