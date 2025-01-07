@@ -288,6 +288,25 @@ const app = new Elysia()
       message: "Data fetched!"
     };
   })
+  .post("/students/update", ({ body }) => {
+    const { student_number, password, email } = body;
+    if (password !== "" && email !== "") {
+      const hashedPassword = hashSync(password, 10);
+      db.run("UPDATE students SET password = ?, email = ? WHERE student_number = ?", [hashedPassword, email, student_number]);
+    } else if (password !== "") {
+      const hashedPassword = hashSync(password, 10);
+      db.run("UPDATE students SET password = ? WHERE student_number = ?", [hashedPassword, student_number]);
+    } else if (email !== "") {
+      db.run("UPDATE students SET email = ? WHERE student_number = ?", [email, student_number]);
+    }
+    return { status: "success", message: "Student updated!" };
+  }, {
+    body: t.Object({
+      student_number: t.String(),
+      password: t.String(),
+      email: t.String()
+    })
+  })
 
   .listen(3000)
 console.log("Server is running on port 3000");
