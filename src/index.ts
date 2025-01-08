@@ -67,7 +67,6 @@ const app = new Elysia()
       return { status: "error", message: "Assessment is already ongoing!" };
     }
     onGoingAssessments.push(body);
-    console.log(onGoingAssessments);
     db.run("INSERT INTO distributed_assessments (title, description, time_limit, shuffle_questions, section, questions) VALUES (?, ?,?, ?, ?, ?)", [title, description, time_limit, shuffle_questions, section, JSON.stringify(questions)]);
     return { status: "success", message: "Assessment distributed!" };
   }, {
@@ -141,7 +140,6 @@ const app = new Elysia()
     student: StudentType
   })
   .post("/students/submit", ({ body }) => {
-    console.log(body);
     const { student_number, assessment, answers, time_taken, total_points, mistakes, assessment_id } = body;
     db.run("INSERT INTO assessment_results (assessment_id, student_number, assessment, answers, time_taken, total_points, mistakes) VALUES (?, ?, ?, ?, ?, ?, ?)", [assessment_id, student_number, JSON.stringify(assessment), JSON.stringify(answers), time_taken, total_points, JSON.stringify(mistakes)]);
     return { status: "success", message: "Answers submitted!" };
@@ -165,7 +163,7 @@ const app = new Elysia()
       return { status: "error", message: "You are restricted from taking this assessment!" };
     }
     // if the student already submitted the assessment, return an error
-    const hasSubmitted = db.prepare("SELECT * FROM assessment_results WHERE student_number = ? AND assessment_id = ?").get(student_number, assessment_id);
+    const hasSubmitted: any = db.prepare("SELECT * FROM assessment_results WHERE student_number = ? AND assessment_id = ?").get(student_number, assessment_id);
     if (hasSubmitted) {
       return { status: "error", message: "You have already submitted this assessment!" };
     }
@@ -306,6 +304,16 @@ const app = new Elysia()
       password: t.String(),
       email: t.String()
     })
+  })
+  .delete("/page/assessment-results/:student_number", ({ params }) => {
+    const { student_number } = params;
+    const deleteResults = db.prepare("DELETE FROM assessment_results WHERE student_number = ?").run(student_number);
+    if (deleteResults.changes === 0) {
+      return { status: "error", message: "Student not found!" };
+    }
+    return { status: "success", message: "Results deleted!" };
+  }, {
+    params: t.Object({ student_number: t.String() })
   })
 
   .listen(3000)
